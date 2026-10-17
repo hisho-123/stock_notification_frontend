@@ -1,13 +1,14 @@
 // E2E専用。実際のDB・価格提供サービス・LINEへは接続しない。
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   assets as initialAssets,
   settings as initialSettings,
   session as initialSession,
 } from './fixtures.ts';
 
-const origin = 'https://localhost:5173';
+const origin = process.env.TEST_ORIGIN || 'https://localhost:5173';
 let items, settings, options, sessions, requests;
 function reset() {
   items = structuredClone(initialAssets);
@@ -62,6 +63,23 @@ http
       return json(res, 200, { ok: true });
     }
     if (url.pathname === '/__test/state') return json(res, 200, { items, settings });
+    // 操作別の遅延で処理中のUIと重複送信防止を検証する。
+    const operation = url.pathname.endsWith('/login')
+      ? 'login'
+      : url.pathname.endsWith('/logout')
+        ? 'logout'
+        : url.pathname.endsWith('/notifications')
+          ? req.method === 'GET'
+            ? 'settings'
+            : 'save'
+          : req.method === 'PATCH'
+            ? 'toggle'
+            : req.method === 'DELETE'
+              ? 'delete'
+              : req.method === 'POST'
+                ? 'create'
+                : 'list';
+    if (options[`${operation}Delay`]) await delay(options[`${operation}Delay`]);
     const token = /(?:^|;\s*)__Host-stock_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
     const csrfCookie = /(?:^|;\s*)__Host-stock_csrf=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
     const modifies = req.method !== 'GET';
@@ -88,7 +106,10 @@ http
       return json(
         res,
         200,
-        { ...initialSession, expires_at: new Date(Date.now() + 86400000).toISOString() },
+        {
+          ...initialSession,
+          expires_at: new Date(Date.now() + (options.sessionTtlMs || 86400000)).toISOString(),
+        },
         { 'Set-Cookie': cookies(value) },
       );
     }
@@ -101,7 +122,7 @@ http
     if (url.pathname === '/api/v1/auth/session')
       return json(res, 200, {
         ...initialSession,
-        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        expires_at: new Date(Date.now() + (options.sessionTtlMs || 86400000)).toISOString(),
       });
     if (url.pathname === '/api/v1/auth/logout') {
       if (raw) return fail(res, 400, 'VALIDATION_ERROR', '本文は指定できません。');
@@ -116,7 +137,7 @@ http
       const q = (url.searchParams.get('q') ?? '').toLowerCase();
       const sort = url.searchParams.get('sort') ?? 'created_at';
       const order = url.searchParams.get('order') === 'desc' ? -1 : 1;
-      const filtered = items.filter(
+      const filtered = (options.emptyAssets ? [] : items).filter(
         (a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q),
       );
       filtered.sort((a, b) => {
@@ -182,14 +203,20 @@ http
         return fail(res, 404, 'ASSET_NOT_FOUND', '監視対象が見つかりません。');
       }
       if (req.method === 'PATCH') {
+        if (consume('toggleFailures'))
+          return fail(res, 403, 'CSRF_FAILED', '監視状態を変更できませんでした。');
         asset.monitoring_enabled = body.monitoring_enabled;
+        if (consume('toggleDisconnects')) return res.destroy();
         return json(res, 200, asset);
       }
       if (req.method === 'DELETE') {
         if (raw) return fail(res, 400, 'VALIDATION_ERROR', '本文は指定できません。');
         if (consume('deleteFailures'))
           return fail(res, 503, 'SERVICE_UNAVAILABLE', '削除できませんでした。');
+        if (consume('deleteForbidden'))
+          return fail(res, 403, 'CSRF_FAILED', '削除を拒否しました。');
         items = items.filter((a) => a.id !== id);
+        if (consume('deleteDisconnects')) return res.destroy();
         return json(res, 204);
       }
     }
@@ -212,4 +239,4 @@ http
     }
     return fail(res, 404, 'NOT_FOUND', '対象がありません。');
   })
-  .listen(18080, '127.0.0.1');
+  .listen(Number(process.env.E2E_API_PORT || 18080), '127.0.0.1');

@@ -94,7 +94,7 @@ npm run dev
 ## 検証
 
 ```sh
-# 型チェック・lint・単体/コンポーネントテスト・本番ビルド
+# 型チェック・lint・書式・計測ツール自己テスト・Vitest C0/C1 100%・本番ビルド
 npm run check
 
 # 初回のみブラウザを導入
@@ -102,25 +102,52 @@ npx playwright install chromium
 
 # ビルド済みdistをHTTPSで配信し、専用APIスタブと接続して検証
 npm run test:e2e
+
+# 専用ビルドを生成し、ブラウザ操作のカバレッジも収集
+npm run test:e2e:coverage
 ```
 
 E2Eは`https://localhost:5173`と`http://127.0.0.1:18080`を使用します。実行前に開発サーバーをCtrl+Cで停止してください。既存プロセスはテストから停止・再利用しません。専用APIスタブはテスト時だけ起動し、実際のGo API・DB・FMP・LINEを使用しません。スタブのテスト用IDは`owner`、パスワードは`test-password`で、実サービスの認証情報ではありません。
 
-| コマンド               | 内容                                    |
-| ---------------------- | --------------------------------------- |
-| `npm run typecheck`    | TypeScript型チェック                    |
-| `npm run lint`         | ESLint                                  |
-| `npm run format:check` | Prettierによる書式確認                  |
-| `npm run format`       | ソース・設定・READMEの書式を統一        |
-| `npm test`             | Vitest・Testing Library                 |
-| `npm run test:watch`   | 単体テストの監視実行                    |
-| `npm run build`        | 型チェックと`dist/`生成                 |
-| `npm run preview`      | 生成済み`dist/`をHTTPS・5173で確認      |
-| `npm run test:e2e`     | Playwright、1440×900・390×844のChromium |
+開発サーバーを起動したまま検証する場合は、専用ポートを指定できます。通常E2E・計測付きE2Eの両方で利用でき、既存プロセスの停止・再利用は行いません。
+
+```sh
+E2E_PORT=5175 E2E_API_PORT=18085 npm run test:e2e:coverage
+```
+
+| コマンド                      | 内容                                             |
+| ----------------------------- | ------------------------------------------------ |
+| `npm run typecheck`           | TypeScript型チェック                             |
+| `npm run lint`                | ESLint                                           |
+| `npm run format:check`        | Prettierによる書式確認                           |
+| `npm run format`              | ソース・設定・READMEの書式を統一                 |
+| `npm test`                    | Vitest・Testing Library                          |
+| `npm run test:coverage`       | VitestのC0/C1計測とファイル別100%判定            |
+| `npm run test:coverage-tools` | 集計・未ロードファイル・レポート生成の自己テスト |
+| `npm run test:e2e:coverage`   | 専用ビルドとPlaywrightのカバレッジ計測           |
+| `npm run test:watch`          | 単体テストの監視実行                             |
+| `npm run build`               | 型チェックと`dist/`生成                          |
+| `npm run preview`             | 生成済み`dist/`をHTTPS・5173で確認               |
+| `npm run test:e2e`            | Playwright、1440×900・390×844のChromium          |
+
+C0はIstanbulのStatements、C1はBranchesを指します。Vitestは本番の`src/**/*.{ts,tsx}`全体（起動・ルーティングを含む）を対象とし、テスト・型宣言だけを除外します。未実行ファイルも母数に含め、各ファイルのC0・C1が100%未満なら失敗します。Lines・Functionsは参考値です。`npm test`は計測なし、`npm run test:coverage`は計測・閾値判定付きです。
+
+Playwrightは`vite-plugin-istanbul`による`.coverage-dist/`専用ビルドを使います。通常の`dist/`には計測コードを入れません。PC・スマートフォン・両者の合算を出力し、Vitestとは合算しません。重点範囲は3画面と認証・API・一覧取得・入力検証・表示・共通UIです。`main.tsx`・`router.tsx`・`types.ts`は全体の数値に含め、重点範囲からだけ分けます。重点範囲の100%は改善目標であり、未達率ではCIを失敗させません。テスト失敗・計測データ欠落・集計エラーは失敗にします。
+
+初回の実測（2026-10-17）は、Vitest 72件が成功しC0 100%（462/462）・C1 100%（346/346）。通常E2E・計測付きE2Eは各17シナリオ×2画面サイズ＝34件が成功し、E2E重点範囲はC0 97.75%・C1 96.14%でした。未到達経路の理由と単体テストでの補完は[カバレッジの検証方針](docs/testing.md)を参照してください。
+
+再読み込み前の累積値はテスト専用のsessionStorageへ文書ID付きで保存し、最終回収時に同じ文書を一度だけ加算します。各テストは独立したブラウザコンテキストを使用し、計測コマンドの開始時に前回の結果を削除します。未ロードの本番ファイルも0%として含めます。計測のためのignore指定・カウンタ操作は使用しません。
+
+| 成果物                                    | 内容                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| `coverage/vitest/`                        | 全本番コードのHTML・JSON・LCOV・未到達の文／分岐一覧                      |
+| `coverage/e2e/summary.md`・`summary.json` | PC・スマホ・合算、それぞれの全体／重点範囲のC0・C1                        |
+| `coverage/e2e/{desktop,mobile,combined}/` | HTML・JSON・LCOV・`uncovered.md`／`uncovered.json`。`priority/`は重点範囲 |
+| `coverage/e2e/raw/`                       | シナリオ・文書ごとの生データ。再読み込み前の結果も含む                    |
 
 単体テストでは入力境界、UTF-8バイト数、価格精度、JST変換、APIエラー、古い一覧応答の排除、設定保存失敗と未保存確認を検証します。ブラウザテストではSecure Cookie・Origin・CSRF、全画面の操作、401・403・404・409・422・429・502・503・504、通信断、履歴・再読み込み・Esc・フォーカス、ページ全体の横はみ出しを検証します。
 
-画面キャプチャ・失敗時のトレースは`test-results/`、HTMLレポートは`playwright-report/`へ出力します。`npx playwright show-report`で参照できます。GitHub Actionsでも同じ検証を実行し、失敗時はレポートを7日間保存します。
+画面キャプチャ・失敗時のトレースは`test-results/`、HTMLレポートは`playwright-report/`へ出力します。`npx playwright show-report`で参照できます。GitHub Actionsは`npm run check`・通常E2E・計測付きE2Eを実行します。カバレッジ成果物は成功・失敗にかかわらず7日間、Playwrightの失敗レポートも7日間保存します。
 
 2026-10-12の初回構築で、型チェック・lint・書式確認・単体/コンポーネントテスト14件・本番ビルド・ブラウザテスト18件が成功しました。HTTPS開発サーバーでも専用APIスタブを使い、ログイン、再読み込み後のセッション復元、設定画面、ログアウトと、ブラウザ実行時エラーがないことを確認しています。実際のFMP取得・LINE送信は実施していません。
 
@@ -157,5 +184,7 @@ STATIC_DIR="$(cd ../stock_notification_frontend/dist && pwd)" \
 - **ログイン直後にログイン画面へ戻る**：HTTPSで開いているか、証明書警告への対応が済んでいるか、ブラウザがCookieを許可しているか確認します。
 - **5173/18080が使用中**：`lsof -nP -iTCP:5173 -iTCP:18080 -sTCP:LISTEN`で使用元を確認します。E2E時は自身の開発サーバーを停止します。既存サービスを勝手に終了しないでください。
 - **銘柄を登録できない**：重複、取得不可、FMP側の拒否・障害・タイムアウトを画面に表示します。有効なFMP契約・APIキーの管理はバックエンド側で行います。
+
+テストの対象は単一管理者向けの現行3画面です。仕様書で追加された複数ユーザー・LINE登録は未実装であり、今回のカバレッジ対象には含めません。
 
 このリポジトリにはバックエンド・DBの構築、日次スケジューラ、公開環境へのデプロイは含みません。

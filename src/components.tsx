@@ -38,7 +38,7 @@ export function Header({
       onLogout();
       return;
     }
-    if (busy) return;
+    // この処理の入口はdisabledで制御するボタンだけなので、到達不能な再入判定を重ねない。
     setBusy(true);
     setError('');
     try {

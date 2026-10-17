@@ -42,7 +42,8 @@ export class ApiClient {
     this.csrfToken = session.csrf_token;
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // 全公開操作がoptionsを指定するため、呼出不能な既定引数は設けない。
+  private async request<T>(path: string, options: RequestInit): Promise<T> {
     const method = options.method ?? 'GET';
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');

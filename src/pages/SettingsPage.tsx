@@ -108,7 +108,7 @@ export function SettingsPage() {
     }
   }
   async function performLogout() {
-    if (saving || loggingOut) return;
+    // ヘッダーからはrequestLogout、確認からはdialogのbusyが受付を制御する。
     setLoggingOut(true);
     setLogoutError('');
     try {

@@ -9,5 +9,14 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     clearMocks: true,
     restoreMocks: true,
+    coverage: {
+      provider: 'istanbul',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.d.ts'],
+      reportsDirectory: 'coverage/vitest',
+      reporter: ['text', 'html', 'json', 'json-summary', 'lcov'],
+      reportOnFailure: true,
+      thresholds: { statements: 100, branches: 100, perFile: true },
+    },
   },
 });
