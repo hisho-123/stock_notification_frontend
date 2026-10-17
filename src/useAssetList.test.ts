@@ -45,3 +45,25 @@ it('再取得失敗時に直前の一覧を残し、再試行で復旧する', a
   expect(result.current.data?.total).toBe(0);
   expect(result.current.error).toBe('');
 });
+
+it('取消済みの古い要求が失敗しても、新しい結果をエラーで上書きしない', async () => {
+  const api = new ApiClient();
+  let rejectOld!: (error: unknown) => void;
+  vi.spyOn(api, 'assets')
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectOld = reject;
+        }),
+    )
+    .mockResolvedValueOnce({ items: [], total: 0 });
+  const initial: ListOptions = { q: '', sort: 'created_at', order: 'asc' };
+  const { result, rerender } = renderHook((options) => useAssetList(api, options), {
+    initialProps: initial,
+  });
+  rerender({ ...initial, q: 'new' });
+  await waitFor(() => expect(result.current.data?.total).toBe(0));
+  await act(async () => rejectOld(new Error('old request')));
+  expect(result.current.error).toBe('');
+  expect(result.current.loading).toBe(false);
+});

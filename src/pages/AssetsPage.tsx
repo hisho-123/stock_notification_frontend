@@ -104,7 +104,7 @@ export function AssetsPage() {
     });
   }
   async function toggle(asset: Asset) {
-    if (pending.has(asset.id)) return;
+    // 通信中の行操作は両ボタンのdisabledで止める。フォーム送信とは異なり別の入口はない。
     markPending(asset.id, true);
     setActionError('');
     setNotice('');
@@ -130,7 +130,7 @@ export function AssetsPage() {
     }
   }
   async function remove() {
-    if (!deleting || pending.has(deleting.id)) return;
+    if (!deleting) return;
     const asset = deleting;
     markPending(asset.id, true);
     setDeleteError('');
