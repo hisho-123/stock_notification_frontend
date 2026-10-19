@@ -90,7 +90,7 @@ test('ログイン失敗でID保持・パスワード消去、429では待機後
   await page.goto('/assets');
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('ID', { exact: true }).fill('owner');
-  await page.getByLabel('パスワード', { exact: true }).fill('wrong');
+  await page.getByLabel('パスワード', { exact: true }).fill('wrong-password');
   await page.getByRole('button', { name: 'ログイン', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('IDまたはパスワードが違います');
   await expect(page.getByLabel('ID', { exact: true })).toHaveValue('owner');

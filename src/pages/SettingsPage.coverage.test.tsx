@@ -152,3 +152,26 @@ it('閉じた確認の確定イベントは遷移もログアウトも起こさ�
   expect(auth.logout).not.toHaveBeenCalled();
   expect(screen.getByRole('heading', { name: '通知設定' })).toBeVisible();
 });
+it.each(['load', 'save', 'logout'] as const)(
+  'ユーザー切替で取消した%s操作からエラーや再取得を行わない',
+  async (operation) => {
+    const cancelled = new DOMException('session replaced', 'AbortError');
+    if (operation === 'load') {
+      vi.mocked(auth.api.settings).mockRejectedValueOnce(cancelled);
+      mount();
+    } else {
+      await ready();
+      if (operation === 'save') {
+        add();
+        vi.mocked(auth.api.saveSettings).mockRejectedValueOnce(cancelled);
+        save();
+      } else {
+        vi.mocked(auth.logout).mockRejectedValueOnce(cancelled);
+        logout();
+      }
+    }
+    await act(async () => {});
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(auth.api.settings).toHaveBeenCalledOnce();
+  },
+);

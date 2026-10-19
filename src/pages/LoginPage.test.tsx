@@ -37,11 +37,11 @@ it('送信中の再送を抑止し、成功時には入力値をそのまま渡�
   const pending = deferred<void>();
   vi.mocked(auth.login).mockReturnValue(pending.promise);
   renderPage(<LoginPage />, '/login');
-  fill(' owner ', ' pass ');
+  fill(' owner ', ' password ');
   submit();
   expect(screen.getByRole('button', { name: 'ログイン中…' })).toBeDisabled();
   fireEvent.submit(screen.getByLabelText('ID').closest('form')!);
-  expect(auth.login).toHaveBeenCalledExactlyOnceWith(' owner ', ' pass ');
+  expect(auth.login).toHaveBeenCalledExactlyOnceWith(' owner ', ' password ');
   await act(() => pending.resolve());
   expect(screen.getByRole('button', { name: 'ログイン' })).toBeEnabled();
 });

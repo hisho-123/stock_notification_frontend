@@ -1,9 +1,12 @@
 export function validateLogin(id: string, password: string): Record<string, string> {
   const errors: Record<string, string> = {};
   if ([...id].length < 1 || [...id].length > 100)
-    errors.admin_id = 'IDは1〜100文字で入力してください。';
-  if (!password || new TextEncoder().encode(password).length > 72)
-    errors.password = 'パスワードは1〜72バイトで入力してください。';
+    errors.login_id = 'IDは1〜100文字で入力してください。';
+  if (
+    new TextEncoder().encode(password).length < 8 ||
+    new TextEncoder().encode(password).length > 72
+  )
+    errors.password = 'パスワードはUTF-8で8〜72バイトで入力してください。';
   return errors;
 }
 export function normalizeCode(input: string): string {

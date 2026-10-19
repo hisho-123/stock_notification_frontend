@@ -52,8 +52,15 @@ export default defineConfig(({ mode }) => {
         : []),
     ],
     build: coverage ? { outDir: '.coverage-dist', sourcemap: true, minify: false } : {},
-    server: { host: 'localhost', port: 5173, strictPort: true, proxy },
+    server: {
+      host: 'localhost',
+      port: 5173,
+      strictPort: true,
+      proxy,
+      headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
+    },
     preview: {
+      headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
       host: 'localhost',
       port: Number(process.env.E2E_PORT || 5173),
       strictPort: true,

@@ -1,7 +1,7 @@
 import type { Asset, Session } from '../src/types';
 
 export const session: Session = {
-  admin_id: 'owner',
+  login_id: 'owner',
   csrf_token: 'test-csrf-token-00000000000000000000000000000000',
   expires_at: new Date(Date.now() + 86_400_000).toISOString(),
 };

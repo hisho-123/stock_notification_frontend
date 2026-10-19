@@ -4,11 +4,11 @@ import { formatDate, formatPrice } from './format';
 
 describe('入力・表示仕様', () => {
   it('ID・パスワードの空白を保持し、文字数とUTF-8バイト数を検証する', () => {
-    expect(validateLogin(' owner ', ' pass ')).toEqual({});
+    expect(validateLogin(' owner ', ' password ')).toEqual({});
     expect(validateLogin('😀'.repeat(100), 'あ'.repeat(24))).toEqual({});
     expect(validateLogin('😀'.repeat(101), 'あ'.repeat(25))).toHaveProperty('password');
     expect(validateLogin('', '')).toEqual(
-      expect.objectContaining({ admin_id: expect.any(String), password: expect.any(String) }),
+      expect.objectContaining({ login_id: expect.any(String), password: expect.any(String) }),
     );
     expect(validateLogin('owner', 'x'.repeat(73))).toHaveProperty('password');
   });

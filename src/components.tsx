@@ -51,7 +51,19 @@ export function Header({
   }
   return (
     <>
-      <a className="skip-link" href="#main">
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(event) => {
+          // 登録URLのフラグメントには権限トークンがあるため、アンカーで書き換えない。
+          event.preventDefault();
+          const main = document.getElementById('main');
+          if (main) {
+            main.tabIndex = -1;
+            main.focus();
+          }
+        }}
+      >
         本文へ移動
       </a>
       <header className="topbar">

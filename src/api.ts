@@ -5,6 +5,7 @@ import type {
   ListOptions,
   NotificationSettings,
   Session,
+  RegistrationValidity,
 } from './types';
 
 export class ApiError extends Error {
@@ -17,6 +18,10 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+export function isCancelled(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export function errorMessage(error: unknown): string {
@@ -33,21 +38,51 @@ export function uncertainResult(error: unknown): boolean {
 
 export class ApiClient {
   private csrfToken: string | null = null;
+  private generation = 0;
+  private requests = new Set<AbortController>();
   onUnauthorized: () => void = () => {};
 
   clearSession() {
+    this.generation++;
+    for (const request of this.requests) request.abort();
+    this.requests.clear();
     this.csrfToken = null;
   }
   setSession(session: Session) {
+    this.clearSession();
     this.csrfToken = session.csrf_token;
   }
 
   // 全公開操作がoptionsを指定するため、呼出不能な既定引数は設けない。
   private async request<T>(path: string, options: RequestInit): Promise<T> {
+    // ユーザー切替後に旧要求の成功・401・後続再取得を反映しないため、世代を固定する。
+    const publicRequest = ['/auth/login', '/auth/register', '/auth/registration/validate'].includes(
+      path,
+    );
+    const generation = this.generation;
+    const controller = new AbortController();
+    if (!publicRequest) this.requests.add(controller);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
+    try {
+      const value = await this.perform<T>(path, { ...options, signal });
+      if ((!publicRequest && generation !== this.generation) || signal.aborted)
+        throw new DOMException('Request cancelled', 'AbortError');
+      return value;
+    } finally {
+      this.requests.delete(controller);
+    }
+  }
+
+  private async perform<T>(path: string, options: RequestInit): Promise<T> {
+    const publicRequest = ['/auth/login', '/auth/register', '/auth/registration/validate'].includes(
+      path,
+    );
     const method = options.method ?? 'GET';
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-    if (method !== 'GET' && path !== '/auth/login' && this.csrfToken) {
+    if (method !== 'GET' && !publicRequest && this.csrfToken) {
       headers.set('X-CSRF-Token', this.csrfToken);
     }
     let response: Response;
@@ -65,17 +100,15 @@ export class ApiClient {
           error !== null &&
           'name' in error &&
           error.name === 'AbortError')
-      )
-        throw error;
+      ) {
+        if (isCancelled(error)) throw error;
+        throw new DOMException('Request cancelled', 'AbortError');
+      }
       throw new ApiError(
         0,
         'NETWORK_ERROR',
         '通信に失敗しました。接続を確認して再試行してください。',
       );
-    }
-    if (response.status === 401 && path !== '/auth/login') {
-      this.clearSession();
-      this.onUnauthorized();
     }
     if (!response.ok) {
       let payload: ErrorResponse | undefined;
@@ -83,6 +116,11 @@ export class ApiClient {
         payload = (await response.json()) as ErrorResponse;
       } catch {
         /* プロキシ等の非JSONエラー */
+      }
+      if (options.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
+      if (response.status === 401 && !publicRequest) {
+        this.clearSession();
+        this.onUnauthorized();
       }
       const seconds = Number(response.headers.get('Retry-After'));
       throw new ApiError(
@@ -96,8 +134,11 @@ export class ApiClient {
     }
     if (response.status === 204) return undefined as T;
     try {
-      return (await response.json()) as T;
+      const payload = (await response.json()) as T;
+      if (options.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
+      return payload;
     } catch {
+      if (options.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
       throw new ApiError(
         0,
         'INVALID_RESPONSE',
@@ -109,10 +150,25 @@ export class ApiClient {
   session(signal?: AbortSignal) {
     return this.request<Session>('/auth/session', { signal });
   }
-  login(admin_id: string, password: string) {
+  login(login_id: string, password: string, signal?: AbortSignal) {
     return this.request<Session>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ admin_id, password }),
+      body: JSON.stringify({ login_id, password }),
+      signal,
+    });
+  }
+  validateRegistration(registration_token: string, signal?: AbortSignal) {
+    return this.request<RegistrationValidity>('/auth/registration/validate', {
+      method: 'POST',
+      body: JSON.stringify({ registration_token }),
+      signal,
+    });
+  }
+  register(registration_token: string, login_id: string, password: string, signal?: AbortSignal) {
+    return this.request<Session>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ registration_token, login_id, password }),
+      signal,
     });
   }
   logout() {

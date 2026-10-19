@@ -87,3 +87,58 @@ it.each(['success', 'failure'] as const)(
     expect(result.current.state.status).toBe('checking');
   },
 );
+
+it('登録成功後に届く旧ユーザーの初回確認やログイン結果を採用しない', async () => {
+  const pending = deferred<Response>();
+  vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(pending.promise));
+  const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+  const newSession = { ...session, login_id: 'new-user', csrf_token: 'new-token' };
+  act(() => result.current.acceptSession(newSession));
+  await act(() => pending.resolve(response(session)));
+  expect(result.current.state).toEqual({ status: 'authenticated', session: newSession });
+  const login = deferred<typeof session>();
+  vi.spyOn(result.current.api, 'login').mockReturnValueOnce(login.promise);
+  let loggingIn!: Promise<void>;
+  act(() => {
+    loggingIn = result.current.login('owner', 'test-password');
+  });
+  act(() => result.current.acceptSession(newSession));
+  await act(async () => {
+    login.resolve(session);
+    await loggingIn;
+  });
+  expect(result.current.state).toEqual({ status: 'authenticated', session: newSession });
+});
+it.each(['resolved', 'cancelled', 'unauthorized'] as const)(
+  '初回確認の新しい要求・取消・401を個別に扱う: %s',
+  async (outcome) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(session)));
+    const { result } = renderHook(useAuth, { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.state.status).toBe('authenticated'));
+    const pending = deferred<typeof session>();
+    vi.spyOn(result.current.api, 'session').mockReturnValueOnce(pending.promise);
+    let checking!: Promise<void>;
+    act(() => {
+      checking = result.current.check();
+    });
+    if (outcome === 'resolved') {
+      act(() => result.current.acceptSession({ ...session, login_id: 'new-user' }));
+      await act(async () => {
+        pending.resolve(session);
+        await checking;
+      });
+      expect(result.current.state).toMatchObject({ session: { login_id: 'new-user' } });
+    } else {
+      const { ApiError } = await import('./api');
+      await act(async () => {
+        pending.reject(
+          outcome === 'cancelled'
+            ? new DOMException('cancel', 'AbortError')
+            : new ApiError(401, 'UNAUTHENTICATED', '期限切れ'),
+        );
+        await checking;
+      });
+      expect(result.current.state.status).toBe(outcome === 'cancelled' ? 'checking' : 'guest');
+    }
+  },
+);

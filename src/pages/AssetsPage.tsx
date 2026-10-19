@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { ApiError, errorMessage, uncertainResult } from '../api';
+import { ApiError, errorMessage, isCancelled, uncertainResult } from '../api';
 import { useAuth } from '../auth';
 import { Alert, ConfirmDialog, Footer, Header, PageTitle } from '../components';
 import { formatDate, formatPrice } from '../format';
@@ -72,6 +72,7 @@ export function AssetsPage() {
       );
       await refresh();
     } catch (err) {
+      if (isCancelled(err)) return;
       setAddError(
         errorMessage(err) +
           (uncertainResult(err)
@@ -115,6 +116,7 @@ export function AssetsPage() {
       );
       await refresh();
     } catch (err) {
+      if (isCancelled(err)) return;
       if (err instanceof ApiError && err.status === 404) {
         setActionError('対象は削除済みです。一覧を更新しました。');
         await refresh();
@@ -142,6 +144,7 @@ export function AssetsPage() {
       await refresh();
       codeInput.current?.focus();
     } catch (err) {
+      if (isCancelled(err)) return;
       if (err instanceof ApiError && err.status === 404) {
         setDeleting(null);
         setActionError('対象は削除済みです。一覧を更新しました。');

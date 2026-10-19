@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useBeforeUnload, useBlocker } from 'react-router';
 import { useAuth } from '../auth';
-import { errorMessage, uncertainResult } from '../api';
+import { errorMessage, isCancelled, uncertainResult } from '../api';
 import { Alert, ConfirmDialog, Footer, Header, PageTitle, Status } from '../components';
 import { formatDate } from '../format';
 import type { NotificationSettings } from '../types';
@@ -56,6 +56,7 @@ export function SettingsPage() {
       setSaved(settings);
       setEdited([...settings.thresholds]);
     } catch (err) {
+      if (isCancelled(err)) return;
       if (!controller.signal.aborted) setError(`設定を取得できませんでした。${errorMessage(err)}`);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
@@ -91,6 +92,7 @@ export function SettingsPage() {
       setEdited([...result.thresholds]);
       setNotice('設定を保存しました。次の監視実行から適用されます。');
     } catch (err) {
+      if (isCancelled(err)) return;
       let message = `保存に失敗しました。編集中の値を保持しています。${errorMessage(err)}`;
       if (uncertainResult(err)) {
         try {
@@ -114,6 +116,7 @@ export function SettingsPage() {
     try {
       await logout();
     } catch (err) {
+      if (isCancelled(err)) return;
       setLogoutError(errorMessage(err));
     } finally {
       setLoggingOut(false);

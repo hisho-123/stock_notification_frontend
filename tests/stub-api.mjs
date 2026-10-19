@@ -9,11 +9,19 @@ import {
 } from './fixtures.ts';
 
 const origin = process.env.TEST_ORIGIN || 'https://localhost:5173';
-let items, settings, options, sessions, requests;
+let items, settings, options, sessions, requests, users, usedTokens;
 function reset() {
   items = structuredClone(initialAssets);
   settings = structuredClone(initialSettings);
-  sessions = new Set();
+  sessions = new Map();
+  users = new Map([
+    ['owner', { password: 'test-password', items, settings }],
+    [
+      'other',
+      { password: 'other-password', items: [], settings: structuredClone(initialSettings) },
+    ],
+  ]);
+  usedTokens = new Set();
   requests = [];
   options = {};
 }
@@ -62,23 +70,31 @@ http
       sessions.clear();
       return json(res, 200, { ok: true });
     }
-    if (url.pathname === '/__test/state') return json(res, 200, { items, settings });
+    if (url.pathname === '/__test/state')
+      return json(res, 200, {
+        items: users.get('owner').items,
+        settings: users.get('owner').settings,
+      });
     // 操作別の遅延で処理中のUIと重複送信防止を検証する。
     const operation = url.pathname.endsWith('/login')
       ? 'login'
-      : url.pathname.endsWith('/logout')
-        ? 'logout'
-        : url.pathname.endsWith('/notifications')
-          ? req.method === 'GET'
-            ? 'settings'
-            : 'save'
-          : req.method === 'PATCH'
-            ? 'toggle'
-            : req.method === 'DELETE'
-              ? 'delete'
-              : req.method === 'POST'
-                ? 'create'
-                : 'list';
+      : url.pathname.endsWith('/validate')
+        ? 'validate'
+        : url.pathname.endsWith('/register')
+          ? 'register'
+          : url.pathname.endsWith('/logout')
+            ? 'logout'
+            : url.pathname.endsWith('/notifications')
+              ? req.method === 'GET'
+                ? 'settings'
+                : 'save'
+              : req.method === 'PATCH'
+                ? 'toggle'
+                : req.method === 'DELETE'
+                  ? 'delete'
+                  : req.method === 'POST'
+                    ? 'create'
+                    : 'list';
     if (options[`${operation}Delay`]) await delay(options[`${operation}Delay`]);
     const token = /(?:^|;\s*)__Host-stock_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
     const csrfCookie = /(?:^|;\s*)__Host-stock_csrf=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
@@ -90,7 +106,7 @@ http
       origin: req.headers.origin,
       csrf: !!req.headers['x-csrf-token'],
       cookie: !!token,
-      body: url.pathname.endsWith('/login') ? undefined : body,
+      body: /\/(login|register|validate)$/.test(url.pathname) ? undefined : body,
     });
     if (modifies && req.headers.origin !== origin)
       return fail(res, 403, 'CSRF_FAILED', '要求元を確認できませんでした。');
@@ -99,29 +115,86 @@ http
         return fail(res, 429, 'TOO_MANY_ATTEMPTS', '時間をおいて再試行してください。', {
           'Retry-After': '2',
         });
-      if (body?.admin_id !== 'owner' || body?.password !== 'test-password')
+      if (!users.has(body?.login_id) || users.get(body.login_id).password !== body?.password)
         return fail(res, 401, 'INVALID_CREDENTIALS', 'IDまたはパスワードが違います。');
       const value = randomBytes(24).toString('hex');
-      sessions.add(value);
+      if (token) sessions.delete(token);
+      sessions.set(value, body.login_id);
       return json(
         res,
         200,
         {
           ...initialSession,
+          login_id: body.login_id,
           expires_at: new Date(Date.now() + (options.sessionTtlMs || 86400000)).toISOString(),
         },
         { 'Set-Cookie': cookies(value) },
       );
     }
+    if (['/api/v1/auth/registration/validate', '/api/v1/auth/register'].includes(url.pathname)) {
+      if (consume(`${operation}Limited`))
+        return fail(res, 429, 'TOO_MANY_ATTEMPTS', '時間をおいて再試行してください。', {
+          'Retry-After': '2',
+        });
+      if (consume(`${operation}Failures`))
+        return fail(res, 503, 'SERVICE_UNAVAILABLE', '確認できませんでした。');
+      if (
+        !/^[A-D]{43}$/.test(body?.registration_token ?? '') ||
+        usedTokens.has(body.registration_token) ||
+        consume(`${operation}Unavailable`)
+      )
+        return fail(res, 410, 'REGISTRATION_LINK_UNAVAILABLE', 'この登録URLは利用できません。');
+      if (operation === 'validate')
+        return json(res, 200, { expires_at: new Date(Date.now() + 86400000).toISOString() });
+      if (users.has(body.login_id) || consume('registerConflicts'))
+        return fail(res, 409, 'LOGIN_ID_ALREADY_EXISTS', 'このログインIDは使用されています。');
+      if (
+        typeof body.login_id !== 'string' ||
+        [...body.login_id].length < 1 ||
+        [...body.login_id].length > 100 ||
+        typeof body.password !== 'string' ||
+        Buffer.byteLength(body.password) < 8 ||
+        Buffer.byteLength(body.password) > 72
+      )
+        return fail(res, 400, 'VALIDATION_ERROR', '入力内容を確認してください。');
+      usedTokens.add(body.registration_token);
+      users.set(body.login_id, {
+        password: body.password,
+        items: [],
+        settings: structuredClone(initialSettings),
+      });
+      if (token) sessions.delete(token);
+      const value = randomBytes(24).toString('hex');
+      sessions.set(value, body.login_id);
+      const session = {
+        ...initialSession,
+        login_id: body.login_id,
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+      };
+      // Set-Cookieまで到達して本文だけ失われた成功も再現する。
+      if (consume('registerLostResponses'))
+        return json(
+          res,
+          503,
+          { error: { code: 'SERVICE_UNAVAILABLE', message: '結果を確認できません。', fields: {} } },
+          { 'Set-Cookie': cookies(value) },
+        );
+      if (consume('registerDisconnects')) return res.destroy();
+      return json(res, 201, session, { 'Set-Cookie': cookies(value) });
+    }
     if (url.pathname === '/api/v1/auth/session' && consume('sessionFailures'))
       return fail(res, 503, 'SERVICE_UNAVAILABLE', 'セッションを取得できません。');
     if (!token || !sessions.has(token) || csrfCookie !== initialSession.csrf_token)
       return fail(res, 401, 'UNAUTHENTICATED', 'ログインしてください。');
+    const loginId = sessions.get(token);
+    const data = users.get(loginId);
+    let { items, settings } = data;
     if (modifies && req.headers['x-csrf-token'] !== initialSession.csrf_token)
       return fail(res, 403, 'CSRF_FAILED', '認証トークンを確認できませんでした。');
     if (url.pathname === '/api/v1/auth/session')
       return json(res, 200, {
         ...initialSession,
+        login_id: loginId,
         expires_at: new Date(Date.now() + (options.sessionTtlMs || 86400000)).toISOString(),
       });
     if (url.pathname === '/api/v1/auth/logout') {
@@ -199,7 +272,7 @@ http
       const id = url.pathname.split('/').at(-1);
       const asset = items.find((a) => a.id === id);
       if (!asset || consume('rowMissing')) {
-        items = items.filter((a) => a.id !== id);
+        data.items = items.filter((a) => a.id !== id);
         return fail(res, 404, 'ASSET_NOT_FOUND', '監視対象が見つかりません。');
       }
       if (req.method === 'PATCH') {
@@ -215,7 +288,7 @@ http
           return fail(res, 503, 'SERVICE_UNAVAILABLE', '削除できませんでした。');
         if (consume('deleteForbidden'))
           return fail(res, 403, 'CSRF_FAILED', '削除を拒否しました。');
-        items = items.filter((a) => a.id !== id);
+        data.items = items.filter((a) => a.id !== id);
         if (consume('deleteDisconnects')) return res.destroy();
         return json(res, 204);
       }
@@ -229,7 +302,7 @@ http
       if (req.method === 'PUT') {
         if (consume('saveFailures'))
           return fail(res, 403, 'CSRF_FAILED', '認証トークンを確認できませんでした。');
-        settings = {
+        data.settings = settings = {
           thresholds: [...body.thresholds].sort((a, b) => a - b),
           updated_at: new Date().toISOString(),
         };

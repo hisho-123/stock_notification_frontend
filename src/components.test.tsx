@@ -79,3 +79,13 @@ it('起動元が消えていても、閉じる処理でフォーカスを移動�
   opener.remove();
   expect(() => view.unmount()).not.toThrow();
 });
+it.each([true, false])('本文への移動はfragmentを変えず、対象が存在=%sでも動作する', (exists) => {
+  renderPage(
+    <>
+      <Header />
+      {exists && <main id="main">本文</main>}
+    </>,
+  );
+  expect(fireEvent.click(screen.getByRole('link', { name: '本文へ移動' }))).toBe(false);
+  if (exists) expect(screen.getByRole('main')).toHaveFocus();
+});

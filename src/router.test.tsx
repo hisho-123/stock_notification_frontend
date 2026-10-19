@@ -56,7 +56,13 @@ it('未知のURLと描画失敗にはそれぞれ復旧先を表示する', asyn
   }
   vi.spyOn(console, 'error').mockImplementation(() => {});
   memory = createMemoryRouter(
-    [{ ...router.routes[0], index: false, children: [{ path: '/broken', element: <Broken /> }] }],
+    [
+      {
+        ...router.routes.find((route) => route.children),
+        index: false,
+        children: [{ path: '/broken', element: <Broken /> }],
+      },
+    ],
     { initialEntries: ['/broken'] },
   );
   render(<RouterProvider router={memory} />);

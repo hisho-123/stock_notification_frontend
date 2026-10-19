@@ -15,7 +15,7 @@ describe('APIクライアント', () => {
     fetchMock.mockResolvedValueOnce(json(session));
     await api.login(' owner ', ' pass ');
     expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toEqual({
-      admin_id: ' owner ',
+      login_id: ' owner ',
       password: ' pass ',
     });
     expect(new Headers(fetchMock.mock.calls[0][1]!.headers).has('X-CSRF-Token')).toBe(false);
@@ -112,4 +112,97 @@ describe('APIクライアント', () => {
     expect(uncertainResult(new ApiError(502, 'PRICE_PROVIDER_ERROR', ''))).toBe(false);
     expect(uncertainResult(new ApiError(409, '', ''))).toBe(false);
   });
+});
+
+it('公開登録APIは認証中でもCSRFを送らず、初回セッション復元と並行できる', async () => {
+  const api = new ApiClient();
+  const token = 'A'.repeat(43);
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  const fetch = vi
+    .fn()
+    .mockReturnValueOnce(pending)
+    .mockResolvedValueOnce(new Response(JSON.stringify(session), { status: 201 }));
+  vi.stubGlobal('fetch', fetch);
+  const validate = api.validateRegistration(token);
+  api.setSession(session);
+  resolve(new Response(JSON.stringify({ expires_at: session.expires_at })));
+  await expect(validate).resolves.toEqual({ expires_at: session.expires_at });
+  await api.register(token, ' new-user ', ' password ');
+  for (const [, options] of fetch.mock.calls)
+    expect(new Headers(options.headers).has('X-CSRF-Token')).toBe(false);
+  expect(fetch.mock.calls[0][0]).toBe('/api/v1/auth/registration/validate');
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ registration_token: token });
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+    registration_token: token,
+    login_id: ' new-user ',
+    password: ' password ',
+  });
+});
+it.each([200, 401, 204])(
+  'セッション切替前の遅延応答 HTTP %s を取消し、旧401で新ログインを失効しない',
+  async (status) => {
+    const api = new ApiClient();
+    const unauthorized = vi.fn();
+    api.onUnauthorized = unauthorized;
+    api.setSession(session);
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const pending = status === 204 ? api.deleteAsset('1') : api.settings();
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    api.setSession({ ...session, login_id: 'new-user', csrf_token: 'new-csrf' });
+    finish(status === 204 ? new Response(null, { status }) : new Response('{}', { status }));
+    await rejected;
+    expect(unauthorized).not.toHaveBeenCalled();
+  },
+);
+it.each([200, 401])('本文読込中のユーザー切替でも遅延HTTP %sを採用しない', async (status) => {
+  const api = new ApiClient();
+  const unauthorized = vi.fn();
+  api.onUnauthorized = unauthorized;
+  let finish!: (body: object) => void;
+  const body = new Promise<object>((resolve) => {
+    finish = resolve;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue({ ok: status === 200, status, headers: new Headers(), json: () => body }),
+  );
+  const pending = api.settings();
+  const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  await Promise.resolve();
+  api.setSession({ ...session, login_id: 'new-user' });
+  finish({});
+  await rejected;
+  expect(unauthorized).not.toHaveBeenCalled();
+});
+it('ユーザー切替で中断した通信失敗は取消として伝え、成否不明の再取得を誘発しない', async () => {
+  const api = new ApiClient();
+  let fail!: (reason: unknown) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<Response>((_, reject) => {
+          fail = reject;
+        }),
+    ),
+  );
+  const pending = api.createAsset('AAPL');
+  const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  api.setSession({ ...session, login_id: 'new-user' });
+  fail(new TypeError('connection lost'));
+  await rejected;
 });

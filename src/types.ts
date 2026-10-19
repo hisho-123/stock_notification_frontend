@@ -1,8 +1,12 @@
 // 正本: stock_notification_docs/api/openapi.yaml。ID・価格を数値へ変換しない。
 export interface Session {
-  admin_id: string;
+  login_id: string;
   expires_at: string;
   csrf_token: string;
+}
+
+export interface RegistrationValidity {
+  expires_at: string;
 }
 
 export type AssetErrorCode = 'PRICE_FETCH_FAILED' | 'NOTIFICATION_FAILED' | 'PRICE_DATA_STALE';

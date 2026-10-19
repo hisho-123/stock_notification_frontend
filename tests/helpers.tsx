@@ -24,13 +24,15 @@ export function authMock(): ReturnType<typeof useAuth> {
     api: new ApiClient(),
     check: vi.fn().mockResolvedValue(undefined),
     login: vi.fn().mockResolvedValue(undefined),
+    acceptSession: vi.fn(),
+    forgetSession: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
   };
 }
 export function renderPage(element: ReactNode, path = '/assets') {
   const router = createMemoryRouter(
     [
-      { path, element },
+      { path: path.split(/[?#]/)[0], element },
       { path: '*', element: <h1>移動先</h1> },
     ],
     { initialEntries: [path] },

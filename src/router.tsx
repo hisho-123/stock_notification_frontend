@@ -1,6 +1,7 @@
 import { createBrowserRouter, Link, Navigate, Outlet, useRouteError } from 'react-router';
 import { useAuth } from './auth';
 import { Alert, Header, Status } from './components';
+import { RegisterPage } from './pages/RegisterPage';
 import { LoginPage } from './pages/LoginPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -34,7 +35,7 @@ export function SessionBoundary() {
 export function ProtectedRoutes() {
   const { state } = useAuth();
   return state.status === 'authenticated' ? (
-    <Outlet key={state.session.expires_at} />
+    <Outlet key={`${state.session.login_id}:${state.session.csrf_token}`} />
   ) : (
     <Navigate to="/login" replace />
   );
@@ -50,6 +51,7 @@ function RouteError() {
   );
 }
 export const router = createBrowserRouter([
+  { path: '/register', element: <RegisterPage />, errorElement: <RouteError /> },
   {
     element: <SessionBoundary />,
     errorElement: <RouteError />,

@@ -33,7 +33,7 @@ export function LoginPage() {
     setFields(invalid);
     setError('');
     if (Object.keys(invalid).length) {
-      (invalid.admin_id ? idInput : passwordInput).current?.focus();
+      (invalid.login_id ? idInput : passwordInput).current?.focus();
       return;
     }
     setBusy(true);
@@ -64,26 +64,26 @@ export function LoginPage() {
           <h1>ログイン</h1>
           <p className="description">監視対象と通知の設定を管理します。</p>
         </div>
-        <section className="card login-card" aria-label="管理者ログイン">
-          <form onSubmit={(event) => void submit(event)} noValidate>
+        <section className="card login-card" aria-label="ユーザーログイン">
+          <form id="login-form" onSubmit={(event) => void submit(event)} noValidate>
             <div className="field">
-              <label htmlFor="admin-id">ID</label>
+              <label htmlFor="login-id">ID</label>
               <input
                 ref={idInput}
-                id="admin-id"
-                name="admin_id"
+                id="login-id"
+                name="login_id"
                 autoComplete="username"
                 required
-                placeholder="管理者ID"
+                placeholder="ログインID"
                 disabled={busy}
                 value={id}
                 onChange={(event) => setId(event.target.value)}
-                aria-invalid={!!fields.admin_id}
-                aria-describedby={fields.admin_id ? 'id-error' : undefined}
+                aria-invalid={!!fields.login_id}
+                aria-describedby={fields.login_id ? 'id-error' : undefined}
               />
-              {fields.admin_id && (
+              {fields.login_id && (
                 <div className="field-error" id="id-error" role="alert">
-                  {fields.admin_id}
+                  {fields.login_id}
                 </div>
               )}
             </div>
@@ -109,18 +109,30 @@ export function LoginPage() {
                 </div>
               )}
             </div>
-            <Alert>
-              {wait
-                ? `ログインの試行回数が上限に達しました。あと${wait}秒で再試行できます。`
-                : error}
-            </Alert>
-            <button className="primary login-submit" type="submit" disabled={busy || wait > 0}>
+            <div id="login-error">
+              <Alert>
+                {wait
+                  ? `ログインの試行回数が上限に達しました。あと${wait}秒で再試行できます。`
+                  : error}
+              </Alert>
+            </div>
+            <button
+              id="login-button"
+              className="primary login-submit"
+              type="submit"
+              disabled={busy || wait > 0}
+            >
               {busy ? 'ログイン中…' : 'ログイン'}
             </button>
-            <Status>{busy ? 'ログインしています…' : ''}</Status>
+            <div id="login-status">
+              <Status>{busy ? 'ログインしています…' : ''}</Status>
+            </div>
           </form>
-          <p className="security-note">管理者専用の画面です。ログインの有効期限は24時間です。</p>
+          <p className="security-note">ログインの有効期限は24時間です。</p>
         </section>
+        <p className="security-note">
+          初めて利用する方は、LINE公式アカウントを友だち追加し、トークに届くURLから登録してください。URLが届かない／期限切れの場合は「登録」と送信してください。
+        </p>
         <p className="login-footer">下落通知 · 株と指数を、毎日見守る。</p>
       </main>
     </>

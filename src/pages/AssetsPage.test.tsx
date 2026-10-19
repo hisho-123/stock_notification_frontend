@@ -195,3 +195,25 @@ it.each([
     ),
   );
 });
+
+it.each(['create', 'toggle', 'delete'] as const)(
+  'ユーザー切替で取消した%s操作から一覧再取得・エラー表示を行わない',
+  async (operation) => {
+    const cancelled = new DOMException('session replaced', 'AbortError');
+    if (operation === 'create') vi.spyOn(auth.api, 'createAsset').mockRejectedValueOnce(cancelled);
+    if (operation === 'toggle')
+      vi.spyOn(auth.api, 'setMonitoring').mockRejectedValueOnce(cancelled);
+    if (operation === 'delete') vi.spyOn(auth.api, 'deleteAsset').mockRejectedValueOnce(cancelled);
+    await mount();
+    if (operation === 'create') add('TSLA');
+    else if (operation === 'toggle')
+      fireEvent.click(screen.getByRole('button', { name: 'AAPLの監視を再開' }));
+    else {
+      fireEvent.click(screen.getByRole('button', { name: 'AAPLを削除' }));
+      fireEvent.click(screen.getByRole('button', { name: '削除する' }));
+    }
+    await act(async () => {});
+    expect(auth.api.assets).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('alert')).toBeNull();
+  },
+);
